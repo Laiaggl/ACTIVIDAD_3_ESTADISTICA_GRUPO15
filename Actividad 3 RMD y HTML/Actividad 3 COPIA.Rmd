@@ -1,0 +1,290 @@
+---
+title: "Actividad 3 COPIA"
+author: "Melany Pamela Pineda"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+
+## Limpieza del Entorno y Carga de Paquetes 
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+rm(list = ls())
+set.seed(4206)
+
+# Instalación y carga de paquetes necesarios
+paquetes <- c("dplyr", "tidyr", "ggplot2", "factoextra", "pheatmap", "gtsummary", "broom", "pROC")
+paquetes_nuevos <- paquetes[!paquetes %in% rownames(installed.packages())]
+
+if (length(paquetes_nuevos) > 0) {
+  install.packages(paquetes_nuevos, dependencies = TRUE)
+}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(factoextra)
+library(pheatmap)
+library(gtsummary)
+library(broom)
+library(pROC)
+```
+
+## Paso 1. Carga y Limpieza de Datos 
+
+```{r include=TRUE}
+
+# Carga de la base de datos
+datos <- read.csv(
+  "Base de datos Los Simpson.csv", 
+  stringsAsFactors = FALSE, 
+  fileEncoding = "UTF-8"
+)
+
+# Definición del rango de genes
+genes <- names(datos)[which(names(datos) == "ADCY3"):which(names(datos) == "UHMK1")]
+
+na_conteos <- colSums(is.na(datos[, genes]))
+
+# Limpieza 
+n_inicial <- nrow(datos)
+datos_limpios <- datos %>% drop_na(all_of(genes))
+n_final <- nrow(datos_limpios)
+
+# Mostrar resumen del proceso de filtrado
+data.frame(
+  registros_iniciales = n_inicial,
+  registros_finales = n_final,
+  registros_eliminados = n_inicial - n_final
+)
+```
+
+## Paso 2. Análisis de Normalidad con Shapiro Wilk
+
+```{r include=TRUE}
+
+normalidad_genes <- lapply(genes, function(gen) {
+  test <- shapiro.test(datos_limpios[[gen]])
+  data.frame(
+    gen = gen,
+    W = unname(test$statistic),
+    p_valor = test$p.value
+  )
+}) %>% 
+  bind_rows() %>%
+  mutate(
+    W = round(W, 4),
+    p_valor = round(p_valor, 4),
+    decision = ifelse(p_valor < 0.05, "Desviación de normalidad", "Normalidad asumida")
+  )
+
+knitr::kable(normalidad_genes, caption = "Resultados del test de Shapiro-Wilk por Gen")
+```
+
+
+## Paso 3. Análisis de Componentes Principales (PCA)
+
+```{r include=TRUE}
+
+# Extraer matriz de expresión y ejecutar PCA
+matriz_expresion <- datos_limpios[, genes]
+pca <- prcomp(matriz_expresion, center = TRUE, scale. = TRUE)
+summary(pca)
+
+# Scores de los 6 componentes principales
+scores <- as.data.frame(pca$x[, 1:6])
+datos_pca <- bind_cols(datos_limpios, scores)
+
+# Extracción de varianza explicada
+varianza <- pca$sdev^2
+proporcion <- varianza / sum(varianza)
+tabla_varianza <- data.frame(
+  Componente = paste0("PC", seq_along(proporcion)),
+  R2 = round(proporcion, 4)
+)
+
+# Tabla para componentes y R2
+knitr::kable(head(tabla_varianza, 6), caption = "Tabla PCA componentes y R2")
+
+# Gráfico de sedimentación (Scree plot)
+fviz_eig(pca, addlabels = TRUE) +
+  labs(title = "Varianza explicada por los componentes principales", x = "Componentes", y = "% Varianza")
+```
+
+
+## Paso 4. Visualizaciones y Clustering 
+
+### 4.1 Visualización de Variables y Contribuciones
+
+```{r include=TRUE}
+
+# Gráfico de variables (cos2)
+fviz_pca_var(pca, col.var = "cos2", 
+             gradient.cols = c("#2E86AB", "#F6C85F", "#D1495B"), 
+             repel = TRUE) +
+  labs(title = "Representación de genes en el plano PC1-PC2", color = "Cos2")
+
+# Clustering de variables en 3 grupos basado en coordenadas PCA
+var_coord <- as.data.frame(pca$rotation[, 1:2])
+dist_var <- dist(scale(var_coord))
+hc_var <- hclust(dist_var, method = "ward.D2")
+genes_clusters <- cutree(hc_var, k = 3)
+
+# Contribuciones de las variables a PC1 y PC2
+fviz_contrib(pca, choice = "var", axes = 1, top = 10) + labs(title = "10 contribuciones a PC1")
+fviz_contrib(pca, choice = "var", axes = 2, top = 10) + labs(title = "10 contribuciones a PC2")
+```
+
+
+### 4.2. Visualización de Individuos por Categoría de IMC
+
+Esta parte no se si esta bienn:)
+
+```{r include=TRUE}
+
+# Crear variable IMC categórica
+datos_pca <- datos_pca %>%
+  mutate(cat_imc = case_when(
+    imc_kg_m2 < 25 ~ "Normal",
+    imc_kg_m2 >= 25 & imc_kg_m2 < 30 ~ "Sobrepeso",
+    imc_kg_m2 >= 30 ~ "Obesidad"
+  ),
+  cat_imc = factor(cat_imc, levels = c("Normal", "Sobrepeso", "Obesidad")))
+
+# Graficar individuos coloreados por categoría de IMC
+fviz_pca_ind(pca, geom.ind = "point", habillage = datos_pca$cat_imc,
+             addEllipses = TRUE, ellipse.type = "confidence",
+             palette = c("#2E86AB", "#F6C85F", "#D1495B"), legend.title = "Categoría IMC") +
+  labs(title = "Distribución de pacientes según componentes principales")
+```
+
+
+### 4.3. Clustering de Individuos
+
+```{r include=TRUE}
+
+scores_cluster <- scale(datos_pca[, c("PC1", "PC2", "PC3", "PC4", "PC5", "PC6")])
+dist_ind <- dist(scores_cluster, method = "euclidean")
+hc_ind <- hclust(dist_ind, method = "ward.D2")
+
+# Asignar los 3 clusters de individuos
+datos_pca$cluster_ind <- factor(cutree(hc_ind, k = 3))
+
+# Visualización de los clusters en el espacio de componentes
+ggplot(datos_pca, aes(x = PC1, y = PC2, color = cluster_ind)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(title = "Clusters de individuos en el plano PC1-PC2", x = "PC1", y = "PC2", color = "Cluster") +
+  theme_minimal()
+```
+
+
+## Paso 5 - Heatmaps
+
+```{r include=TRUE}
+
+# 1. Heatmap de correlación de Spearman entre genes y las 6 componentes principales
+
+correlaciones <- cor(datos_pca[, genes], datos_pca[, c("PC1", "PC2", "PC3", "PC4", "PC5", "PC6")], method = "spearman")
+pheatmap(correlaciones, cluster_rows = TRUE, cluster_cols = FALSE, 
+         display_numbers = TRUE, number_format = "%.2f",
+         main = "Correlación de Spearman (Genes vs PC)")
+```
+
+
+## Paso 6 - Tabla Descriptiva Estratificada por Terciles
+
+```{r include=TRUE}
+
+# Función adaptada para generar terciles exactos utilizando quantile y cut
+crear_terciles <- function(x) {
+  puntos <- quantile(x, probs = c(0.3333, 0.6667), na.rm = TRUE)
+  cut(x, breaks = c(-Inf, puntos, Inf), labels = c("t1", "t2", "t3"), 
+      include.lowest = TRUE, right = TRUE)
+}
+
+# Aplicar categorización por terciles
+datos_pca <- datos_pca %>%
+  mutate(
+    PC1_t = crear_terciles(PC1),
+    PC2_t = crear_terciles(PC2),
+    PC3_t = crear_terciles(PC3)
+  )
+
+# Extraer los 5 genes con mayor carga absoluta en PC1 para la descriptiva compacta
+cargas_pc1 <- data.frame(gen = genes, carga = pca$rotation[, "PC1"]) %>%
+  mutate(abs_carga = abs(carga)) %>% arrange(desc(abs_carga))
+genes_top <- head(cargas_pc1$gen, 5)
+
+# Generación de tabla descriptiva estructurada con gtsummary según terciles de PC1
+tabla_terciles_pc1 <- datos_pca %>%
+  select(PC1_t, edad_anios, sexo, imc_kg_m2, glucosa_mg_dl, tg_mg_dl, all_of(genes_top)) %>%
+  tbl_summary(
+    by = PC1_t,
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}, {p75})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = all_continuous() ~ 1,
+    missing = "no"
+  ) %>%
+  add_p(
+    test = list(all_continuous() ~ "kruskal.test", all_categorical() ~ "fisher.test"),
+    pvalue_fun = function(x) style_pvalue(x, digits = 3)
+  ) %>%
+  modify_caption("**Características clínicas y expresión según terciles de PC1**")
+
+tabla_terciles_pc1
+```
+
+
+
+## Paso 7 - Modelo Predictivo (Regresión Logística)
+
+```{r include=TRUE}
+
+# Crear variable binaria resultado para sobrepeso
+datos_pca <- datos_pca %>%
+  mutate(sobrepeso = factor(ifelse(imc_kg_m2 >= 25, "Si", "No"), levels = c("No", "Si")))
+
+# Configuración de referencias basales
+datos_pca <- datos_pca %>%
+  mutate(
+    PC1_t = relevel(PC1_t, ref = "t1"),
+    PC2_t = relevel(PC2_t, ref = "t1"),
+    PC3_t = relevel(PC3_t, ref = "t1"),
+    sexo = factor(sexo),
+    sexo = relevel(sexo, ref = head(levels(sexo), 1))
+  )
+
+# Modelos lógicos de regresión logística
+modelo_crudo <- glm(sobrepeso ~ PC1_t + PC2_t + PC3_t, data = datos_pca, family = binomial(link = "logit"))
+modelo_ajustado <- glm(sobrepeso ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo + glucosa_mg_dl, data = datos_pca, family = binomial(link = "logit"))
+
+# Tabla resumen del modelo final multivariante con gtsummary
+tabla_regresion <- tbl_regression(
+  modelo_ajustado,
+  exponentiate = TRUE,
+  label = list(
+    PC1_t ~ "Terciles de PC1",
+    PC2_t ~ "Terciles de PC2",
+    PC3_t ~ "Terciles de PC3",
+    edad_anios ~ "Edad (Años)",
+    sexo ~ "Sexo del paciente",
+    glucosa_mg_dl ~ "Glucosa basal (mg/dL)"
+  )
+) %>%
+  bold_labels() %>%
+  modify_caption("**Modelo Multivariante Ajustado para Predicción de Sobrepeso**")
+
+tabla_regresion
+
+# Curva ROC
+roc_analisis <- roc(response = datos_pca$sobrepeso, predictor = fitted(modelo_ajustado), quiet = TRUE)
+print(paste("Área Bajo la Curva (AUC):", round(auc(roc_analisis), 4)))
+
+plot(roc_analisis, main = "Curva ROC - Modelo Predictivo de Sobrepeso", col = "#D1495B", lwd = 2)
+```
+
+
