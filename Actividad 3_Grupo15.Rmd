@@ -1,0 +1,804 @@
+---
+title: "Actividad 3_Grupo15"
+author: "Grupo 15"
+date: "2026-06-17"
+output: html_document
+---
+
+## 0. PREPARACIÓN DEL ENTORNO
+
+```{r setup, include=FALSE}
+
+## Limpieza del Entorno y Carga de Paquetes 
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+rm(list = ls())
+set.seed(4206)
+
+# Instalación y carga de paquetes necesarios
+paquetes <- c("dplyr", "tidyr", "ggplot2", "factoextra", "pheatmap", "gtsummary", "broom", "pROC")
+paquetes_nuevos <- paquetes[!paquetes %in% rownames(installed.packages())]
+
+if (length(paquetes_nuevos) > 0) {
+  install.packages(paquetes_nuevos, dependencies = TRUE)
+}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(factoextra)
+library(pheatmap)
+library(gtsummary)
+library(broom)
+library(pROC)
+```
+
+## 1. CARGA, ESTRUCTURA Y LIMPIEZA DE LOS DATOS
+
+### 1.1. Carga
+
+```{r path, echo=FALSE}
+path <- "D:/Users/JUAN/Desktop/Cursos/Master Bioinformatica/Estadistica y R para ciencias de la salud/Actividad3"
+
+setwd(path)
+
+datos <- read.csv("Base de datos Los Simpson completa.csv")
+
+dim(datos)
+
+str(datos)
+
+head(datos)
+
+names(datos)
+
+sapply(datos, class)
+```
+
+### 1.2. Categorización de variables
+
+Variables de interés
+
+```{r variables_interes, echo=TRUE}
+
+genes <- names(datos)[which(names(datos) == "ADCY3"):which(names(datos) == "UHMK1")]
+
+na_conteos <- colSums(is.na(datos[, genes]))
+
+
+n_inicial <- nrow(datos)
+datos_limpios <- datos %>% drop_na(all_of(genes))
+n_final <- nrow(datos_limpios)
+
+
+data.frame(
+  registros_iniciales = n_inicial,
+  registros_finales = n_final,
+  registros_eliminados = n_inicial - n_final
+)
+```
+
+## 2. COMPROBACIÓN DE NORMALIDAD EN LA EXPRESIÓN GÉNICA
+
+```{r normalidad, results='asis'}
+normalidad_genes <- lapply(
+  genes,
+  function(genes) {
+
+    test <- shapiro.test(
+      datos_limpios[[genes]]
+    )
+
+    data.frame(
+      gen = genes,
+      W = unname(test$statistic),
+      p_valor = test$p.value
+    )
+  }
+) %>%
+  bind_rows() %>%
+  mutate(
+    W = round(W, 4),
+
+    decision = ifelse(
+      p_valor < 0.05,
+      "Evidencia de desviación de normalidad",
+      "Sin evidencia suficiente contra normalidad"
+    ),
+    p_valor = format(p_valor, scientific = TRUE, digits = 3),
+  )
+
+knitr::kable(normalidad_genes, caption = "Resultados del test de Shapiro-Wilk por Gen")
+
+table(normalidad_genes$decision)
+
+```
+
+## 3. ANÁLISIS DE LOS COMPONENTES PRINCIPALES
+
+### 3.1. Varianzas y Scores
+
+```{r scale, results='hide'}
+matriz_expresion <- datos_limpios[, genes]
+
+pca <- prcomp(
+  matriz_expresion,
+  center = TRUE,
+  scale. = TRUE
+)
+
+summary(pca)
+
+varianza <- pca$sdev^2
+
+proporcion <- varianza / sum(varianza)
+
+tabla_varianza <- data.frame(
+  componente = paste0(
+    "PC",
+    seq_along(proporcion)
+  ),
+
+  varianza_explicada = round(
+    proporcion * 100,
+    2
+  ),
+
+  varianza_acumulada = round(
+    cumsum(proporcion) * 100,
+    2
+  )
+)
+
+knitr::kable(head(tabla_varianza, 6), caption = "Tabla PCA componentes y R2")
+
+tabla_varianza[1:6, ]
+
+fviz_eig(
+  pca,
+  addlabels = TRUE
+) +
+  labs(
+    title = "Varianza explicada por los componentes principales",
+    x = "Componente principal",
+    y = "Varianza explicada (%)"
+  )
+
+scores <- as.data.frame(
+  pca$x[, 1:6, drop = FALSE]
+)
+
+datos_pca <- bind_cols(
+  datos,
+  scores
+)
+
+head(
+  datos_pca[, c(
+    "nombre",
+    "PC1",
+    "PC2",
+    "PC3",
+    "PC4",
+    "PC5",
+    "PC6"
+  )]
+)
+
+```
+
+### 3.2. Cargas
+
+```{r cargas}
+cargas <- as.data.frame(
+  pca$rotation[, 1:6, drop = FALSE]
+) %>%
+  tibble::rownames_to_column(
+    var = "gen"
+  )
+
+cargas  #Tabla PCA cargas
+
+cargas_PC1 <- cargas %>%
+  mutate(
+    carga_absoluta = abs(PC1)
+  ) %>%
+  arrange(
+    desc(carga_absoluta)
+  )
+
+cargas_PC2 <- cargas %>%
+  mutate(
+    carga_absoluta = abs(PC2)
+  ) %>%
+  arrange(
+    desc(carga_absoluta)
+  )
+
+cargas_PC3 <- cargas %>%
+  mutate(
+    carga_absoluta = abs(PC3)
+  ) %>%
+  arrange(
+    desc(carga_absoluta)
+  )
+cargas_PC4 <- cargas %>%
+  mutate(
+    carga_absoluta = abs(PC4)
+  ) %>%
+  arrange(
+    desc(carga_absoluta)
+  )
+cargas_PC5 <- cargas %>%
+  mutate(
+    carga_absoluta = abs(PC5)
+  ) %>%
+  arrange(
+    desc(carga_absoluta)
+  )
+cargas_PC6 <- cargas %>%
+  mutate(
+    carga_absoluta = abs(PC6)
+  ) %>%
+  arrange(
+    desc(carga_absoluta)
+  )
+
+
+cargas_PC1
+cargas_PC2
+cargas_PC3
+cargas_PC4
+cargas_PC5
+cargas_PC6
+
+
+
+```
+
+## 4. VISUALIZACIONES Y CLUSTERING
+
+### 4.1. Visualización de Variables y Contribuciones
+
+```{r grafica_PC1_PC2, fig.height=5, fig.width=6}
+fviz_pca_var(
+  pca,
+  col.var = "cos2",
+  gradient.cols = c("#2E86AB", "#F6C85F", "#D1495B"),
+  repel = TRUE
+) +
+  labs(
+    title = "Representacion de genes en el plano PC1-PC2",
+    color = "Cos2"
+  )
+```
+### 4.2. Contribución de los genes
+
+```{r contribucion_genes}
+fviz_contrib(
+  pca,
+  choice = "var",
+  axes = 1,
+  top = 10
+) +
+  labs(
+    title = "Genes con mayor contribución a PC1"
+  )
+
+fviz_contrib(
+  pca,
+  choice = "var",
+  axes = 2,
+  top = 10
+) +
+  labs(
+    title = "Genes con mayor contribución a PC2"
+  )
+```
+### 5.3. Individuos coloreados según IMC
+
+```{r grafica_individuos, message=FALSE, warning=FALSE}
+datos_pca <- datos_pca %>%
+  mutate(
+    imc = case_when(
+      imc_kg_m2<25 ~ "Normal",
+      imc_kg_m2>30 ~ "Obesidad",
+      imc_kg_m2>25 ~ "Sobrepeso")
+    )
+      
+fviz_pca_ind(
+  pca,
+  geom.ind = "point",
+  habillage = datos_pca$imc,
+  addEllipses = TRUE,
+  ellipse.type = "confidence",
+  palette = c("#2E86AB", "#9ACD32","#D1495B"),
+  legend.title = "IMC"
+) +
+  labs(
+    title = "Distribución de registros según perfil transcriptómico"
+  )
+```
+
+## 6. CLUSTERING JERÁRQUICO
+
+```{r Paso 4 Clustering1, echo=FALSE}
+scores_cluster <- datos_pca %>%
+  select(
+    PC1,
+    PC2,
+    PC3,
+    PC4,
+    PC5,
+    PC6
+  ) %>%
+  scale()
+
+distancias <- dist(
+  scores_cluster,
+  method = "euclidean"
+)
+
+cluster_hierarquico <- hclust(
+  distancias,
+  method = "ward.D2"
+)
+
+plot(
+  cluster_hierarquico,
+  labels = FALSE,
+  hang = -1,
+  main = "Dendrograma de perfiles transcriptomicos",
+  xlab = "Registros",
+  ylab = "Distancia"
+)
+rect.hclust(
+  cluster_hierarquico,
+  k = 3,
+  border = 2:5
+)
+```
+```{r Clustering2, results='hide'}
+datos_pca$cluster <- factor(
+cutree(
+cluster_hierarquico,
+k = 3
+)
+)
+table(datos_pca$cluster)
+
+table(
+datos_pca$cluster,
+datos_pca$imc
+)
+resumen_cluster <- datos_pca %>%
+  group_by(cluster) %>%
+  summarise(
+    n = n(),
+    edad_mediana = median(edad_anios, na.rm = TRUE),
+    imc_mediano = median(imc_kg_m2, na.rm = TRUE),
+    cintura_mediana = median(ccintura_cm, na.rm = TRUE),
+    grasa_corporal_mediana = median(grasa_corporal_pct, na.rm = TRUE),
+    pas_mediana = median(pas_mmhg, na.rm = TRUE),
+    pad_mediana = median(pad_mmhg, na.rm = TRUE),
+    glucosa_mediana = median(glucosa_mg_dl, na.rm = TRUE),
+    tg_mediana = median(tg_mg_dl, na.rm = TRUE),
+    colesterol_total_mediano = median(colesterol_total_mg_dl, na.rm = TRUE),
+    ldl_mediano = median(ldl_mg_dl, na.rm = TRUE),
+    hdl_mediano = median(hdl_mg_dl, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+knitr::kable(resumen_cluster, caption = "Resumen de los clusters")
+
+ggplot(
+datos_pca,
+aes(
+x = PC1,
+y = PC2,
+color = cluster,
+shape = imc
+)
+) +
+geom_point(size = 3, alpha = 0.85) +
+labs(
+title = "Clusters transcriptomicos en el plano PC1-PC2",
+x = "PC1",
+y = "PC2",
+color = "Cluster",
+shape = "IMC"
+) +
+theme_classic()
+```
+
+## 7. HEATMAP DE CORRELACIONES Y EXPRESIÓN
+
+```{r Heatmap, echo=FALSE}
+
+correlaciones <- cor(
+datos_pca[, genes],
+datos_pca[, c("PC1", "PC2", "PC3", "PC4", "PC5", "PC6")],
+method = "spearman"
+)
+round(
+correlaciones,
+2
+)
+
+pheatmap(
+correlaciones,
+cluster_rows = TRUE,
+cluster_cols = FALSE,
+display_numbers = TRUE,
+number_format = "%.2f",
+main = "Correlacion entre genes y componentes principales"
+)
+
+anotacion <- data.frame(
+imc = datos_pca$imc,
+cluster = datos_pca$cluster
+)
+rownames(anotacion) <- datos_pca$X
+
+pheatmap(
+t(
+as.matrix(
+datos_pca[, genes]
+)
+),
+scale = "row",
+annotation_colors = anotacion,
+show_colnames = FALSE,
+main = "Patrones de expresión del panel génico"
+)
+
+```
+## 7. AGRUAPCIÓN DE LOS COMPONENTES EN TERCILES
+
+```{r Paso 7 Tabla descriptiva, echo=FALSE}
+crear_terciles <- function(x) {
+  puntos <- quantile(
+    x,
+    probs = c(0.3333, 0.6667),
+    na.rm = TRUE
+  )
+  cut(
+    x,
+    breaks = c(-Inf, puntos, Inf),
+    labels = c("T1", "T2", "T3"),
+    include.lowest = TRUE,
+    right = TRUE
+  )
+}
+
+datos_pca <- datos_pca %>%
+  mutate(
+    PC1_t = crear_terciles(PC1),
+    PC2_t = crear_terciles(PC2),
+    PC3_t = crear_terciles(PC3)
+  )
+
+table(datos_pca$PC1_t)
+table(datos_pca$PC2_t)
+table(datos_pca$PC3_t)
+
+datos_pca %>%
+  group_by(PC1_t) %>%
+  summarise(
+    n = n(),
+    PC1_min = min(PC1),
+    PC1_max = max(PC1),
+    PC1_mediana = median(PC1),
+    .groups = "drop"
+  )
+datos_pca %>%
+  group_by(PC2_t) %>%
+  summarise(
+    n = n(),
+    PC1_min = min(PC2),
+    PC1_max = max(PC2),
+    PC1_mediana = median(PC2),
+    .groups = "drop"
+  )
+datos_pca %>%
+  group_by(PC3_t) %>%
+  summarise(
+    n = n(),
+    PC1_min = min(PC3),
+    PC1_max = max(PC3),
+    PC1_mediana = median(PC3),
+    .groups = "drop"
+  )
+```
+### 7.1. TABLA DESCRIPTIVA SEGÚN TERCILES
+
+```{r Paso 6 Tabla descriptiva2, echo=FALSE}
+
+genes_PC1 <- cargas_PC1$gen
+genes_PC2<- cargas_PC2$gen
+genes_PC3<- cargas_PC3$gen
+
+tabla_genes_pc1 <- datos_pca %>%
+  select(
+    PC1_t,
+    all_of(genes_PC1)
+  ) %>%
+  tbl_summary(
+    by = PC1_t,
+    type = all_of(genes_PC1) ~ "continuous",
+    statistic = all_continuous() ~ "{median} ({p25}, {p75})",
+    digits = all_continuous() ~ 2,
+    missing = "no"
+  ) %>%
+  add_p(
+    test = all_continuous() ~ "kruskal.test",
+    pvalue_fun = function(x) {
+      style_pvalue(
+        x,
+        digits = 3
+      )
+    }
+  ) 
+
+tabla_genes_pc2 <- datos_pca %>%
+  select(
+    PC2_t,
+    all_of(genes_PC2)
+  ) %>%
+  tbl_summary(
+    by = PC2_t,
+    type = all_of(genes_PC2) ~ "continuous",
+    statistic = all_continuous() ~ "{median} ({p25}, {p75})",
+    digits = all_continuous() ~ 2,
+    missing = "no"
+  ) %>%
+  add_p(
+    test = all_continuous() ~ "kruskal.test",
+    pvalue_fun = function(x) {
+      style_pvalue(
+        x,
+        digits = 3
+      )
+    }
+  )
+
+tabla_genes_pc3 <- datos_pca %>%
+  select(
+    PC3_t,
+    all_of(genes_PC3)
+  ) %>%
+  tbl_summary(
+    by = PC3_t,
+    type = all_of(genes_PC3) ~ "continuous",
+    statistic = all_continuous() ~ "{median} ({p25}, {p75})",
+    digits = all_continuous() ~ 2,
+    missing = "no"
+  ) %>%
+  add_p(
+    test = all_continuous() ~ "kruskal.test",
+    pvalue_fun = function(x) {
+      style_pvalue(
+        x,
+        digits = 3
+      )
+    }
+  )
+
+tabla_genes_pca <-tbl_merge(
+  tbls = list(tabla_genes_pc1, tabla_genes_pc2, tabla_genes_pc3),
+  tab_spanner = c("PC1", "PC2", "PC3")
+)%>%
+  modify_caption("**Expresión de genes destacados según terciles de PC1**") 
+
+tabla_genes_pca
+
+```
+## 8. REGRESIÓN LOGÍSTICA PARA IMC
+
+```{r regresion_log}
+datos_pca <- datos_pca %>%
+  mutate(
+  PC1_t = relevel(
+    PC1_t,
+    ref = "T1"
+    ),
+  PC2_t = relevel(
+    PC2_t,
+    ref = "T1"
+  ),
+  PC3_t = relevel(
+    PC3_t,
+    ref = "T1"
+  ))
+
+modelo_crudo <- glm(
+  imc_kg_m2>=25 ~ PC1_t + PC2_t + PC3_t,
+  data = datos_pca,
+  family = binomial(link = "logit")
+)
+
+modelo_demografico <- glm(
+  imc_kg_m2>=25 ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo,
+  data = datos_pca,
+  family = binomial(link = "logit")
+)
+
+modelo_ajustado <- glm(
+  imc_kg_m2>=25 ~ PC1_t + PC2_t + PC3_t + edad_anios + sexo +
+    glucosa_mg_dl + colesterol_total_mg_dl + ldl_mg_dl,
+  data = datos_pca,
+  family = binomial(link = "logit")
+)
+
+summary(modelo_crudo)
+
+summary(modelo_demografico)
+
+summary(modelo_ajustado)
+```
+
+### 8.1 Extracción de OR e intervalos de confianza
+
+```{r or_crudo, results='hide'}
+extraer_or <- function(modelo, etiqueta) {
+  
+  broom::tidy(
+    modelo,
+    exponentiate = TRUE,
+    conf.int = TRUE
+  ) %>%
+    mutate(
+      modelo = etiqueta,
+
+      OR_IC95 = paste0(
+        round(estimate, 2),
+        " (",
+        round(conf.low, 2),
+        "; ",
+        round(conf.high, 2),
+        ")"
+      ),
+      
+      p_valor = ifelse(
+      p.value < 0.001,
+      "<0.001",
+      format(
+        round(p.value, 3),
+        nsmall = 3
+      )
+    )
+  ) %>%
+  select(
+    modelo,
+    term,
+    OR = estimate,
+    conf.low,
+    conf.high,
+    OR_IC95,
+    p_valor
+  )
+}
+
+or_crudo <- extraer_or(
+  modelo_crudo,
+  "Modelo crudo"
+)
+
+or_demografico <- extraer_or(
+modelo_demografico,
+"Ajustado por edad y sexo"
+)
+
+or_ajustado <- extraer_or(
+modelo_ajustado,
+"Ajuste ampliado"
+)
+
+tabla_or <- bind_rows(
+or_crudo,
+or_demografico,
+or_ajustado
+)
+tabla_or
+
+tabla_or_pc1 <- tabla_or %>%
+filter(
+grepl(
+"^PC1_t",
+term
+)
+)
+tabla_or_pc1
+
+or_ajustado_plot <- or_ajustado %>%
+  filter(term != "(Intercept)") %>%
+  mutate(term = factor(term, levels = rev(unique(term))))
+
+ggplot(or_ajustado_plot, aes(x = OR, y = term)) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "gray40") +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high), color = "#2E86AB") +
+  scale_x_log10() +
+  labs(
+    x = "Odds Ratio",
+    y = "",
+    title = "Odds Ratio del modelo ajustado"
+  ) +
+  theme_minimal()
+```
+## 9. PROBABILIDADES PREDICHAS Y CALIDAD DEL MODELO
+
+```{r probabilidades}
+perfil_prediccion <- expand.grid(
+  PC1_t = factor(
+    c("T1", "T2", "T3"),
+    levels = levels(datos_pca$PC1_t)
+  ),
+  PC2_t = factor(
+    c("T1", "T2", "T3"),
+    levels = levels(datos_pca$PC2_t)
+  ),
+  PC3_t = factor(
+    c("T1", "T2", "T3"),
+    levels = levels(datos_pca$PC3_t)
+  ),
+  edad_anios = median(datos_pca$edad_anios),
+  sexo = factor(
+    "Femenino",
+    levels = levels(datos_pca$sexo)
+  ),
+  imc_kg_m2 = median(datos_pca$imc_kg_m2),
+  colesterol_total_mg_dl = median(datos_pca$colesterol_total_mg_dl),
+  glucosa_mg_dl = median(datos_pca$glucosa_mg_dl),
+  ldl_mg_dl = median(datos_pca$ldl_mg_dl)
+)
+perfil_prediccion$probabilidad <- predict(
+  modelo_ajustado,
+  newdata = perfil_prediccion,
+  type = "response"
+)
+perfil_prediccion
+```
+
+
+```{r}
+roc_modelo <- roc(
+response = datos_pca$imc_kg_m2>=25,
+predictor = fitted(modelo_ajustado),
+quiet = TRUE
+)
+
+
+print(paste("Área Bajo la Curva (AUC):", round(auc(roc_modelo), 4)))
+
+plot(
+roc_modelo,
+main = "Curva ROC del modelo ajustado"
+)
+```
+
+## 10. TABLA FINAL DEL MODELO AJUSTADO
+
+```{r tabla_modelo_final, warning=FALSE}
+tabla_modelo_final <- tbl_regression(
+  modelo_ajustado,
+  exponentiate = TRUE,
+  label = list(
+    PC1_t ~ "Terciles de PC1",
+    PC2_t ~ "Terciles de PC2",
+    PC3_t ~ "Terciles de PC3",
+    edad_anios ~ "Edad (años)",
+    sexo ~ "Sexo",
+    glucosa_mg_dl ~ "Glucosa (mg/dl)"
+  )
+) %>%
+  bold_labels() %>%
+  modify_caption(
+  "**Modelo ajustado para predicción de Sobrepeso**"
+  )
+
+tabla_modelo_final
+```
+
+
+
+
