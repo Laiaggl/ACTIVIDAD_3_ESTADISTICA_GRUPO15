@@ -3,11 +3,15 @@ title: "Actividad 3_Grupo15"
 author: "Grupo 15"
 date: "2026-06-17"
 output: html_document
+html_document:
+    toc: true
+    toc_depth: 3
+    code_folding: hide
 ---
 
 ## 0. PREPARACIÓN DEL ENTORNO
 
-```{r setup, include=FALSE}
+```{r setup, echo=FALSE}
 
 ## Limpieza del Entorno y Carga de Paquetes 
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
@@ -295,7 +299,9 @@ fviz_contrib(
     title = "Genes con mayor contribución a PC2"
   )
 ```
-### 5.3. Individuos coloreados según IMC
+
+### 4.3. INDIVIDUOS COLOREADOS SEGÚN IMC
+
 
 ```{r grafica_individuos, message=FALSE, warning=FALSE}
 datos_pca <- datos_pca %>%
@@ -320,7 +326,7 @@ fviz_pca_ind(
   )
 ```
 
-## 6. CLUSTERING JERÁRQUICO
+## 5. CLUSTERING JERÁRQUICO
 
 ```{r Paso 4 Clustering1, echo=FALSE}
 scores_cluster <- datos_pca %>%
@@ -411,7 +417,7 @@ shape = "IMC"
 theme_classic()
 ```
 
-## 7. HEATMAP DE CORRELACIONES Y EXPRESIÓN
+## 6. HEATMAP DE CORRELACIONES Y EXPRESIÓN
 
 ```{r Heatmap, echo=FALSE}
 
@@ -453,7 +459,9 @@ main = "Patrones de expresión del panel génico"
 )
 
 ```
+
 ## 7. AGRUAPCIÓN DE LOS COMPONENTES EN TERCILES
+
 
 ```{r Paso 7 Tabla descriptiva, echo=FALSE}
 crear_terciles <- function(x) {
@@ -588,7 +596,7 @@ tabla_genes_pca <-tbl_merge(
   tbls = list(tabla_genes_pc1, tabla_genes_pc2, tabla_genes_pc3),
   tab_spanner = c("PC1", "PC2", "PC3")
 )%>%
-  modify_caption("**Expresión de genes destacados según terciles de PC1**") 
+  modify_caption("**Expresión de genes destacados según terciles de PC1, PC2 y PC3**") 
 
 tabla_genes_pca
 
